@@ -38,6 +38,7 @@ SEND_EMPTY_REPORTS = os.environ.get("SEND_EMPTY_REPORTS", "false").lower() == "t
 
 # Harmonies company color scheme for premium HTML email design
 COMPANY_COLORS = {
+    # Original companies
     "MEDICE": "#00828A",
     "Sanofi": "#4f46e5",
     "AstraZeneca": "#8c1d40",
@@ -53,7 +54,33 @@ COMPANY_COLORS = {
     "B. Braun": "#007a87",
     "Berlin-Chemie": "#005fa9",
     "NextPharma": "#004b49",
-    "Aristo": "#00529b"
+    "Aristo": "#00529b",
+    # Target companies (MSL & Patient Advocacy Priority)
+    "Roche": "#006699",
+    "MSD": "#00857c",
+    "BMS": "#6b2c91",
+    "AbbVie": "#002f6c",
+    "Bayer": "#00bcff",
+    "Boehringer Ingelheim": "#002d62",
+    "Eli Lilly": "#d52b1e",
+    "Amgen": "#1b4f72",
+    "Gilead": "#c0392b",
+    "Biogen": "#ea580c",
+    "GSK": "#f36633",
+    "Daiichi Sankyo": "#003399",
+    "Novo Nordisk": "#003865",
+    "Astellas": "#b22222",
+    "UCB": "#2c3e50",
+    "Vertex": "#4a148c",
+    "CSL Behring": "#c0392b",
+    "BioNTech": "#00a499",
+    "Ipsen": "#004b87",
+    "Servier": "#ff7f00",
+    "Eisai": "#d81e05",
+    "Alnylam": "#008080",
+    "Incyte": "#005a9c",
+    "Grünenthal": "#007833",
+    "Sobi": "#e67e22"
 }
 
 # Premium Responsive HTML Email Template (Corporate Design Layout)
@@ -298,19 +325,34 @@ def parse_date(date_str):
         except ValueError:
             pass
 
-    # 3. German/English month names: e.g. "Mai 21, 2026" or "26. Mai 2026" or "May 21, 2026"
+    # 2b. US Slash format (M/D/YY or MM/DD/YYYY)
+    slash_match = re.search(r"\b(\d{1,2})/(\d{1,2})/(\d{2,4})\b", date_str)
+    if slash_match:
+        month, day, year = int(slash_match.group(1)), int(slash_match.group(2)), int(slash_match.group(3))
+        if year < 100:
+            year += 2000
+        try:
+            return date(year, month, day)
+        except ValueError:
+            pass
+
+    # 3. German/English month names: e.g. "Mai 21, 2026" or "26. Mai 2026" or "May 21, 2026" or "Mon Sep 07 00:00:00 UTC 2026"
     months_map = {
         "jan": 1, "feb": 2, "mär": 3, "mar": 3, "apr": 4, "mai": 5, "may": 5,
-        "jun": 6, "jul": 7, "aug": 8, "sep": 9, "okt": 10, "oct": 10, "nov": 11, "dez": 12, "dec": 12
+        "jun": 6, "jul": 7, "aug": 8, "sep": 9, "sept": 9, "okt": 10, "oct": 10, "nov": 11, "dez": 12, "dec": 12
     }
     
     clean_text = date_str.lower()
-    for word in ["gepostet am", "posted on", "veröffentlicht am", "published on", "am"]:
-        clean_text = clean_text.replace(word, "")
-    clean_text = clean_text.replace(",", "")  # Remove commas for easier word/regex boundaries
+    for word in ["gepostet am", "posted on", "veröffentlicht am", "published on", "am", "posted"]:
+        clean_text = clean_text.replace(word, " ")
+    clean_text = clean_text.replace(",", " ")  # Remove commas for easier word/regex boundaries
     clean_text = re.sub(r"\s+", " ", clean_text).strip()
+
+    # Clean double dots e.g. "sep.. 02"
+    clean_no_dots = re.sub(r"\.+", " ", clean_text)
+    clean_no_dots = re.sub(r"\s+", " ", clean_no_dots).strip()
     
-    m1 = re.search(r"(\d{1,2})\.?\s+([a-zäöüß]+)\s+(\d{4})", clean_text)
+    m1 = re.search(r"(\d{1,2})\s+([a-zäöüß]+)\s+(\d{4})", clean_no_dots)
     if m1:
         day = int(m1.group(1))
         month_name = m1.group(2)
@@ -322,11 +364,24 @@ def parse_date(date_str):
             except ValueError:
                 pass
                 
-    m2 = re.search(r"([a-zäöüß]+)\.?\s+(\d{1,2}),?\s+(\d{4})", clean_text)
+    m2 = re.search(r"([a-zäöüß]+)\s+(\d{1,2})\s+(\d{4})", clean_no_dots)
     if m2:
         month_name = m2.group(1)
         day = int(m2.group(2))
         year = int(m2.group(3))
+        month = months_map.get(month_name) or months_map.get(month_name[:3])
+        if month:
+            try:
+                return date(year, month, day)
+            except ValueError:
+                pass
+
+    # Format like "Mon Sep 07 00:00:00 UTC 2026"
+    m3 = re.search(r"\b([a-zäöüß]{3,4})\s+(\d{1,2})\b.*?\b(\d{4})\b", clean_no_dots)
+    if m3:
+        month_name = m3.group(1)
+        day = int(m3.group(2))
+        year = int(m3.group(3))
         month = months_map.get(month_name) or months_map.get(month_name[:3])
         if month:
             try:
@@ -340,7 +395,7 @@ def parse_date(date_str):
     if "gestern" in clean_text or "yesterday" in clean_text:
         return date.today() - timedelta(days=1)
         
-    days_match = re.search(r'(?:vor\s+)?(\d+)\s*(?:tag|day)', clean_text)
+    days_match = re.search(r'(?:vor\s+)?(\d+)\+?\s*(?:tag|day)', clean_text)
     if days_match:
         days = int(days_match.group(1))
         return date.today() - timedelta(days=days)
@@ -388,16 +443,27 @@ class BaseScraper:
         return None
 
 class SuccessFactorsScraper(BaseScraper):
-    def __init__(self, company_name, domain, search_path, payload_filters):
+    def __init__(self, company_name, domain, search_path, payload_filters=None, locale=None, location=None):
         super().__init__(company_name, f"https://{domain}{search_path}")
         self.domain = domain
         self.search_path = search_path
-        self.payload_filters = payload_filters
+        self.payload_filters = payload_filters or {}
+        self.locale = locale
+        self.location = location
 
     def fetch_jobs(self, session):
         search_url = self.base_url
         print(f"[{self.company_name}] Scraping SuccessFactors via {search_url}...")
         
+        locale = self.locale or ("de_DE" if any(k in (self.search_path + self.domain).lower() for k in ["de", "bbraun", "medice", "nextpharma"]) else "en_US")
+        
+        location_val = self.location
+        if not location_val and "locationsearch=" in self.search_path:
+            m_loc = re.search(r"locationsearch=([^&]+)", self.search_path)
+            if m_loc:
+                location_val = m_loc.group(1)
+        location_val = location_val or ""
+
         # Try API first
         try:
             r = session.get(search_url, timeout=15)
@@ -415,14 +481,12 @@ class SuccessFactorsScraper(BaseScraper):
                     "Origin": f"https://{self.domain}"
                 }
                 
-                locale = "de_DE" if "de" in self.search_path or "bbraun" in self.domain or "nextpharma" in self.domain else "en_US"
-                
                 payload = {
                     "locale": locale,
                     "pageNumber": 0,
                     "sortBy": "",
                     "keywords": "",
-                    "location": "",
+                    "location": location_val,
                     "facetFilters": self.payload_filters,
                     "brand": "",
                     "skills": [],
@@ -469,6 +533,36 @@ class SuccessFactorsScraper(BaseScraper):
             r = session.get(search_url, timeout=15)
             r.raise_for_status()
             soup = BeautifulSoup(r.text, "html.parser")
+            
+            # Check for standard SuccessFactors data table (tr.data-row)
+            rows = soup.find_all("tr", class_="data-row")
+            if rows:
+                jobs = []
+                for row in rows:
+                    a = row.find("a", class_="jobTitle-link") or row.find("a")
+                    if not a:
+                        continue
+                    href = a.get("href")
+                    url = f"https://{self.domain}{href}" if href.startswith("/") else href
+                    title = a.get_text(strip=True)
+                    if not title or len(title) < 3:
+                        continue
+                    date_span = row.find(class_="jobDate") or row.find("td", class_="colDate")
+                    start_date = date_span.get_text(strip=True) if date_span else None
+                    loc_span = row.find(class_="jobLocation") or row.find("td", class_="colLocation")
+                    loc = loc_span.get_text(strip=True) if loc_span else "Deutschland"
+                    jobs.append({
+                        "title": title,
+                        "url": url,
+                        "location": loc,
+                        "start_date": start_date or datetime.now().strftime("%d.%m.%y"),
+                        "level": self.company_name
+                    })
+                if jobs:
+                    print(f"  [HTML Table] Found {len(jobs)} jobs")
+                    return jobs
+
+            # Fallback to /job/ links and cards/tiles
             job_links = soup.find_all("a", href=re.compile(r"/job/"))
             jobs = []
             seen = set()
@@ -484,24 +578,30 @@ class SuccessFactorsScraper(BaseScraper):
                     continue
                 seen.add(url)
                 
-                parent_card = link.find_parent(class_=re.compile(r"jobCard|card|row|item", re.I)) or link.parent.parent
+                parent_card = link.find_parent(class_=re.compile(r"jobCard|card|row|item|tile|sub-section", re.I)) or link.parent.parent
                 card_text = parent_card.get_text(" ", strip=True) if parent_card else ""
                 date_match = re.search(r"\b(\d{2}\.\d{2}\.\d{2,4})\b", card_text)
                 
                 start_date = None
                 if date_match:
                     start_date = date_match.group(1)
-                else:
+                elif len(jobs) < self.max_detail_requests:
                     start_date = self._fetch_page_and_match(
-                        session, url, r'"datePosted"\s*:\s*"([^"]+)"', group_index=1, use_raw_html=True
+                        session, url, r'(?:"datePosted"\s*:\s*"|<meta[^>]+itemprop=[\'"]datePosted[\'"][^>]+content=[\'"])([^\'">]+)', group_index=1, use_raw_html=True
                     )
                 
+                loc = "Deutschland"
+                if "Location" in card_text:
+                    m_loc = re.search(r'Location\s*([^,\n\r]+(?:,\s*[^,\n\r]+)?)', card_text)
+                    if m_loc:
+                        loc = m_loc.group(1).strip()
+
                 jobs.append({
                     "title": title,
                     "url": url,
-                    "location": "Deutschland",
+                    "location": loc,
                     "start_date": start_date or datetime.now().strftime("%d.%m.%y"),
-                    "level": None
+                    "level": self.company_name
                 })
             print(f"  [HTML Fallback] Found {len(jobs)} jobs")
             return jobs
@@ -654,64 +754,69 @@ class TalentBrewScraper(BaseScraper):
 
 class AstraZenecaScraper(BaseScraper):
     def __init__(self):
-        super().__init__("AstraZeneca", "https://astrazeneca.eightfold.ai/careers?location=deutschland")
+        super().__init__("AstraZeneca", "https://astrazeneca.eightfold.ai/api/pcsx/search?domain=astrazeneca.com&location=Germany")
 
     def fetch_jobs(self, session):
-        print(f"[{self.company_name}] Scraping AstraZeneca Eightfold HTML Embedded Data...")
+        print(f"[{self.company_name}] Scraping AstraZeneca Eightfold PCSX API...")
+        jobs = []
+        start = 0
         try:
-            r = session.get(self.base_url, timeout=15)
-            r.raise_for_status()
-            
-            soup = BeautifulSoup(r.text, "html.parser")
-            script_tag = soup.find("code", id="smartApplyData")
-            if not script_tag:
-                print("  Error: code#smartApplyData tag not found in AstraZeneca HTML.")
-                return []
-                
-            import html
-            unescaped_json = html.unescape(script_tag.get_text(strip=True))
-            data = json.loads(unescaped_json)
-            raw_jobs = data.get("positions", [])
-            
-            jobs = []
-            for item in raw_jobs:
-                title = item.get("name")
-                job_id = item.get("id")
-                url = item.get("canonicalPositionUrl") or f"https://astrazeneca.eightfold.ai/careers/job/{job_id}"
-                location = item.get("location", "Deutschland")
-                pub_timestamp = item.get("t_create") or item.get("t_update")
-                
-                if title and job_id:
-                    jobs.append({
-                        "title": title,
-                        "url": url,
-                        "location": location,
-                        "start_date": pub_timestamp or datetime.now().strftime("%d.%m.%y"),
-                        "level": item.get("department")
-                    })
+            while len(jobs) < 50:
+                api_url = f"{self.base_url}&start={start}"
+                r = session.get(api_url, timeout=15)
+                r.raise_for_status()
+                data = r.json()
+                positions = data.get("data", {}).get("positions", [])
+                if not positions:
+                    break
+                for item in positions:
+                    title = item.get("name")
+                    job_id = item.get("id")
+                    pos_url = item.get("positionUrl")
+                    url = f"https://astrazeneca.eightfold.ai{pos_url}" if pos_url else f"https://astrazeneca.eightfold.ai/careers/job/{job_id}"
+                    locations = item.get("locations", [])
+                    location = ", ".join(locations) if locations else "Deutschland"
+                    pub_timestamp = item.get("postedTs") or item.get("creationTs")
+                    if title and job_id:
+                        jobs.append({
+                            "title": title,
+                            "url": url,
+                            "location": location,
+                            "start_date": pub_timestamp or datetime.now().strftime("%d.%m.%y"),
+                            "level": item.get("department")
+                        })
+                count = data.get("data", {}).get("count", 0)
+                start += len(positions)
+                if start >= count:
+                    break
             print(f"  Found {len(jobs)} jobs")
             return jobs
         except Exception as e:
             print(f"  AstraZeneca scraping failed: {e}")
             return []
 
-class PfizerScraper(BaseScraper):
-    def __init__(self):
-        super().__init__("Pfizer", "https://pfizer.wd1.myworkdayjobs.com/wday/cxs/pfizer/PfizerCareers/jobs")
+class WorkdayScraper(BaseScraper):
+    def __init__(self, company_name, host, tenant, site, search_text="Germany", applied_facets=None, limit=20, url_prefix=None):
+        self.host = host
+        self.tenant = tenant
+        self.site = site
+        self.search_text = search_text
+        self.applied_facets = applied_facets or {}
+        self.limit = limit
+        self.url_prefix = url_prefix or f"https://{host}/{site}"
+        super().__init__(company_name, f"https://{host}/wday/cxs/{tenant}/{site}/jobs")
 
     def fetch_jobs(self, session):
-        print(f"[{self.company_name}] Scraping Pfizer Workday API...")
+        print(f"[{self.company_name}] Scraping Workday CXS API...")
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json"
         }
         payload = {
-            "limit": 20,
+            "limit": self.limit,
             "offset": 0,
-            "searchText": "",
-            "appliedFacets": {
-                "Location_Country": ["dcc5b7608d8644b3a93716604e78e995"]
-            }
+            "searchText": self.search_text,
+            "appliedFacets": self.applied_facets
         }
         try:
             r = session.post(self.base_url, json=payload, headers=headers, timeout=15)
@@ -725,35 +830,57 @@ class PfizerScraper(BaseScraper):
                 posted_date = posting.get("postedOn")
                 location = posting.get("locationsText", "Deutschland")
                 if title and path:
-                    job_url = f"https://pfizer.wd1.myworkdayjobs.com/pfizer/PfizerCareers{path}"
+                    if not posted_date and len(jobs) < self.max_detail_requests:
+                        try:
+                            det_url = f"https://{self.host}/wday/cxs/{self.tenant}/{self.site}{path}"
+                            r_det = session.get(det_url, headers={"Accept": "application/json"}, timeout=10)
+                            if r_det.status_code == 200:
+                                d_info = r_det.json().get("jobPostingInfo", {})
+                                posted_date = d_info.get("postedOn") or d_info.get("startDate")
+                        except Exception:
+                            pass
+                    job_url = f"{self.url_prefix}{path}"
                     jobs.append({
                         "title": title,
                         "url": job_url,
                         "location": location,
-                        "start_date": posted_date,
-                        "level": "Pfizer"
+                        "start_date": posted_date or datetime.now().strftime("%d.%m.%y"),
+                        "level": self.company_name
                     })
             print(f"  Found {len(jobs)} jobs")
             return jobs
         except Exception as e:
-            print(f"  Pfizer Workday API failed: {e}")
+            print(f"  {self.company_name} Workday API failed: {e}")
             return []
 
-class MerckScraper(BaseScraper):
+class PfizerScraper(WorkdayScraper):
     def __init__(self):
-        super().__init__("Merck", "https://careers.merckgroup.com/de/de/search-results?s=1")
+        super().__init__(
+            "Pfizer", 
+            "pfizer.wd1.myworkdayjobs.com", 
+            "pfizer", 
+            "PfizerCareers", 
+            search_text="", 
+            applied_facets={"Location_Country": ["dcc5b7608d8644b3a93716604e78e995"]},
+            url_prefix="https://pfizer.wd1.myworkdayjobs.com/pfizer/PfizerCareers"
+        )
+
+class PhenomScraper(BaseScraper):
+    def __init__(self, company_name, search_url, job_base_url, max_offsets=(0, 10, 20)):
+        super().__init__(company_name, search_url)
+        self.job_base_url = job_base_url.rstrip("/")
+        self.max_offsets = max_offsets
 
     def fetch_jobs(self, session):
-        print(f"[{self.company_name}] Scraping Merck Phenom DDO state...")
+        print(f"[{self.company_name}] Scraping Phenom DDO state...")
         jobs = []
         seen = set()
-        # Paginate offsets: 0, 10, 20, 30, 40 to capture all new postings
-        for offset in [0, 10, 20, 30, 40]:
-            url = f"{self.base_url}&from={offset}"
+        for offset in self.max_offsets:
+            sep = "&" if "?" in self.base_url else "?"
+            url = f"{self.base_url}{sep}from={offset}"
             try:
                 r = session.get(url, timeout=15)
                 r.raise_for_status()
-                
                 m = re.search(r'phApp\.ddo\s*=\s*(\{.*?\});', r.text)
                 if m:
                     ddo = json.loads(m.group(1))
@@ -762,35 +889,43 @@ class MerckScraper(BaseScraper):
                         title = j.get("title")
                         job_seq = j.get("jobSeqNo")
                         country = j.get("country")
-                        location = j.get("location") or "Deutschland"
+                        location = j.get("location") or j.get("city") or "Deutschland"
                         posted_date = j.get("postedDate")
                         
                         is_germany = False
                         if country and country.lower() in ["germany", "deutschland", "de"]:
                             is_germany = True
-                        elif location and any(k in location.lower() for k in ["germany", "deutschland"]):
+                        elif location and any(k in location.lower() for k in ["germany", "deutschland", "de"]):
                             is_germany = True
                             
                         if is_germany and title and job_seq:
+                            if job_seq in seen:
+                                continue
+                            seen.add(job_seq)
                             url_title = re.sub(r'[^a-zA-Z0-9-]', '-', title.lower())
                             url_title = re.sub(r'-+', '-', url_title).strip('-')
-                            job_url = f"https://careers.merckgroup.com/de/de/job/{job_seq}/{url_title}"
-                            
-                            if job_url not in seen:
-                                seen.add(job_url)
-                                jobs.append({
-                                    "title": title,
-                                    "url": job_url,
-                                    "location": location,
-                                    "start_date": posted_date or datetime.now().strftime("%d.%m.%y"),
-                                    "level": j.get("category")
-                                })
+                            job_url = f"{self.job_base_url}/{job_seq}/{url_title}"
+                            jobs.append({
+                                "title": title,
+                                "url": job_url,
+                                "location": location,
+                                "start_date": posted_date or datetime.now().strftime("%d.%m.%y"),
+                                "level": j.get("category") or self.company_name
+                            })
             except Exception as e:
-                print(f"  Error fetching Merck offset {offset}: {e}")
+                print(f"  [{self.company_name}] Phenom offset {offset} failed: {e}")
                 break
-                
-        print(f"  Found {len(jobs)} Germany jobs from Merck")
+        print(f"  Found {len(jobs)} jobs")
         return jobs
+
+class MerckScraper(PhenomScraper):
+    def __init__(self):
+        super().__init__(
+            "Merck", 
+            "https://careers.merckgroup.com/de/de/search-results?s=1", 
+            "https://careers.merckgroup.com/de/de/job",
+            max_offsets=(0, 10, 20, 30, 40)
+        )
 
 class KadeScraper(BaseScraper):
     def __init__(self):
@@ -840,6 +975,46 @@ class KadeScraper(BaseScraper):
             return jobs
         except Exception as e:
             print(f"  Kade scraping failed: {e}")
+            return []
+
+class TevaScraper(BaseScraper):
+    def __init__(self):
+        super().__init__("Teva", "https://www.careers.teva/careers?location=Germany")
+
+    def fetch_jobs(self, session):
+        print(f"[{self.company_name}] Scraping Teva Eightfold HTML...")
+        try:
+            r = session.get(self.base_url, timeout=15)
+            r.raise_for_status()
+            soup = BeautifulSoup(r.text, "html.parser")
+            script_tag = soup.find("code", id="smartApplyData")
+            if not script_tag:
+                print("  Error: code#smartApplyData tag not found in Teva HTML.")
+                return []
+            import html
+            unescaped_json = html.unescape(script_tag.get_text(strip=True))
+            data = json.loads(unescaped_json)
+            raw_jobs = data.get("positions", [])
+            jobs = []
+            for item in raw_jobs:
+                title = item.get("name")
+                job_id = item.get("id")
+                url = item.get("canonicalPositionUrl") or f"https://www.careers.teva/careers/job/{job_id}"
+                locations = item.get("locations", [])
+                location = ", ".join(locations) if locations else "Deutschland"
+                pub_timestamp = item.get("t_create") or item.get("t_update")
+                if title and job_id:
+                    jobs.append({
+                        "title": title,
+                        "url": url,
+                        "location": location,
+                        "start_date": pub_timestamp or datetime.now().strftime("%d.%m.%y"),
+                        "level": item.get("department", "Teva / ratiopharm")
+                    })
+            print(f"  Found {len(jobs)} jobs")
+            return jobs
+        except Exception as e:
+            print(f"  Teva scraping failed: {e}")
             return []
 
 class NovartisScraper(BaseScraper):
@@ -983,108 +1158,109 @@ class BerlinChemieScraper(BaseScraper):
         super().__init__("Berlin-Chemie", "https://karriere.berlin-chemie.de/search")
 
     def fetch_jobs(self, session):
-        print(f"[{self.company_name}] Scraping Berlin-Chemie via Typesense...")
+        print(f"[{self.company_name}] Scraping Berlin-Chemie...")
         try:
             r = session.get(self.base_url, timeout=15)
             r.raise_for_status()
             
+            # Try Typesense with specific key first
             candidates = re.findall(r'[A-Za-z0-9+/]{40,320}={0,2}', r.text)
             found_key = None
-            filter_by_policy = "tenant_id:=berlin-chemie&&backoffice_vanity:[aussendienst,professionals,young-professionals]&&status:=ACTIVE"
+            filter_by_policy = None
             
             for c in candidates:
-                if len(c) > 100:
+                if len(c) > 60:
                     try:
                         decoded = base64.b64decode(c).decode('utf-8', errors='ignore')
-                        if 'berlin-chemie' in decoded or 'tenant_id' in decoded:
-                            found_key = c
-                            policy_match = re.search(r'"filter_by"\s*:\s*"([^"]+)"', decoded)
-                            if policy_match:
-                                filter_by_policy = policy_match.group(1)
-                                print(f"  Extracted filter policy: {filter_by_policy}")
-                            break
+                        if 'berlin-chemie' in decoded:
+                            m_policy = re.search(r'"filter_by"\s*:\s*"([^"]+)"', decoded)
+                            if m_policy:
+                                policy = m_policy.group(1)
+                                if 'aussendienst' in policy or 'professionals' in policy:
+                                    found_key = c
+                                    filter_by_policy = policy
+                                    break
+                                elif not found_key:
+                                    found_key = c
+                                    filter_by_policy = policy
                     except Exception:
                         pass
                         
-            if not found_key:
-                for c in candidates:
-                    if len(c) > 60:
-                        for slice_start in [0, 20, 40, 64]:
-                            if len(c) > slice_start + 40:
+            if found_key and filter_by_policy:
+                api_url = "https://api.my-job-shop.com/api/typesense/multi_search"
+                headers = {
+                    "Content-Type": "application/json",
+                    "X-Typesense-API-Key": found_key,
+                    "Origin": "https://karriere.berlin-chemie.de",
+                    "Referer": "https://karriere.berlin-chemie.de/"
+                }
+                payload = {
+                    "searches": [
+                        {
+                            "collection": "offers",
+                            "q": "*",
+                            "query_by": "title",
+                            "filter_by": filter_by_policy,
+                            "page": 1,
+                            "per_page": 50,
+                            "sort_by": "create_date_timestamp:desc"
+                        }
+                    ]
+                }
+                resp = session.post(f"{api_url}?x-typesense-api-key={found_key}", json=payload, headers=headers, timeout=15)
+                if resp.status_code == 200:
+                    results = resp.json().get("results", [])
+                    if results:
+                        hits = results[0].get("hits", [])
+                        jobs = []
+                        for hit in hits:
+                            doc = hit.get("document", {})
+                            title = doc.get("title")
+                            url = doc.get("url")
+                            location = doc.get("location", "Deutschland")
+                            pub_timestamp = doc.get("create_date_timestamp")
+                            start_date = None
+                            if pub_timestamp:
                                 try:
-                                    decoded = base64.b64decode(c[slice_start:]).decode('utf-8', errors='ignore')
-                                    if 'berlin-chemie' in decoded:
-                                        found_key = c
-                                        policy_match = re.search(r'"filter_by"\s*:\s*"([^"]+)"', decoded)
-                                        if policy_match:
-                                            filter_by_policy = policy_match.group(1)
-                                        break
+                                    start_date = datetime.fromtimestamp(pub_timestamp).strftime("%d.%m.%y")
                                 except Exception:
                                     pass
-                        if found_key:
-                            break
-
-            if not found_key:
-                print("  Failed to extract Typesense API Key from HTML")
-                return []
-                
-            print(f"  Found Typesense key: {found_key[:15]}...")
+                            if title and url:
+                                jobs.append({
+                                    "title": title,
+                                    "url": url,
+                                    "location": location,
+                                    "start_date": start_date or datetime.now().strftime("%d.%m.%y"),
+                                    "level": doc.get("department", "Berlin-Chemie")
+                                })
+                        if jobs:
+                            print(f"  [Typesense] Found {len(jobs)} jobs")
+                            return jobs
             
-            api_url = "https://api.my-job-shop.com/api/typesense/multi_search"
-            headers = {
-                "Content-Type": "application/json",
-                "X-Typesense-API-Key": found_key,
-                "Origin": "https://karriere.berlin-chemie.de",
-                "Referer": "https://karriere.berlin-chemie.de/"
-            }
-            
-            payload = {
-                "searches": [
-                    {
-                        "collection": "offers",
-                        "q": "*",
-                        "query_by": "title",
-                        "filter_by": filter_by_policy,
-                        "page": 1,
-                        "per_page": 50,
-                        "sort_by": "create_date_timestamp:desc"
-                    }
-                ]
-            }
-            
-            resp = session.post(f"{api_url}?x-typesense-api-key={found_key}", json=payload, headers=headers, timeout=15)
-            if resp.status_code == 200:
-                results = resp.json().get("results", [])
-                if results:
-                    hits = results[0].get("hits", [])
-                    jobs = []
-                    for hit in hits:
-                        doc = hit.get("document", {})
-                        title = doc.get("title")
-                        url = doc.get("url")
-                        location = doc.get("location", "Deutschland")
-                        pub_timestamp = doc.get("create_date_timestamp")
-                        start_date = None
-                        if pub_timestamp:
-                            try:
-                                start_date = datetime.fromtimestamp(pub_timestamp).strftime("%d.%m.%y")
-                            except:
-                                pass
-                        if title and url:
-                            jobs.append({
-                                "title": title,
-                                "url": url,
-                                "location": location,
-                                "start_date": start_date or datetime.now().strftime("%d.%m.%y"),
-                                "level": doc.get("department", "Berlin-Chemie")
-                            })
-                    print(f"  Found {len(jobs)} jobs")
-                    return jobs
-            else:
-                print(f"  Typesense API returned status code {resp.status_code}")
+            # HTML Fallback from search page
+            soup = BeautifulSoup(r.text, "html.parser")
+            jobs = []
+            seen = set()
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                if "/jobs/" in href and href not in seen:
+                    seen.add(href)
+                    title = a.get_text(strip=True)
+                    if not title or len(title) < 5:
+                        continue
+                    url = href if href.startswith("http") else f"https://karriere.berlin-chemie.de{href}"
+                    jobs.append({
+                        "title": title,
+                        "url": url,
+                        "location": "Deutschland",
+                        "start_date": datetime.now().strftime("%d.%m.%y"),
+                        "level": "Berlin-Chemie"
+                    })
+            print(f"  [HTML Fallback] Found {len(jobs)} jobs")
+            return jobs
         except Exception as e:
             print(f"  Berlin-Chemie scraping failed: {e}")
-        return []
+            return []
 
 class AristoScraper(BaseScraper):
     def __init__(self):
@@ -1136,36 +1312,243 @@ class AristoScraper(BaseScraper):
             print(f"  Aristo scraping failed: {e}")
             return []
 
+class GreenhouseScraper(BaseScraper):
+    def __init__(self, company_name, board_token, location_filter="germany"):
+        super().__init__(company_name, f"https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs")
+        self.location_filter = location_filter.lower()
+
+    def fetch_jobs(self, session):
+        print(f"[{self.company_name}] Scraping Greenhouse API...")
+        try:
+            r = session.get(self.base_url, timeout=15)
+            r.raise_for_status()
+            data = r.json()
+            jobs = []
+            for j in data.get("jobs", []):
+                loc_name = (j.get("location", {}).get("name") or "").lower()
+                if self.location_filter in loc_name or "deutschland" in loc_name:
+                    jobs.append({
+                        "title": j.get("title"),
+                        "url": j.get("absolute_url"),
+                        "location": j.get("location", {}).get("name", "Deutschland"),
+                        "start_date": j.get("updated_at"),
+                        "level": self.company_name
+                    })
+            print(f"  Found {len(jobs)} jobs")
+            return jobs
+        except Exception as e:
+            print(f"  {self.company_name} Greenhouse scraping failed: {e}")
+            return []
+
+class SmartRecruitersScraper(BaseScraper):
+    def __init__(self, company_name, company_identifier, country_filter="de"):
+        super().__init__(company_name, f"https://api.smartrecruiters.com/v1/companies/{company_identifier}/postings")
+        self.company_identifier = company_identifier
+        self.country_filter = country_filter.lower()
+
+    def fetch_jobs(self, session):
+        print(f"[{self.company_name}] Scraping SmartRecruiters API...")
+        try:
+            r = session.get(self.base_url, timeout=15)
+            r.raise_for_status()
+            data = r.json()
+            jobs = []
+            for j in data.get("content", []):
+                country = (j.get("location", {}).get("country") or "").lower()
+                if country == self.country_filter or "germany" in country or "deutschland" in country:
+                    job_id = j.get("id")
+                    loc = j.get("location", {}).get("fullLocation") or j.get("location", {}).get("city") or "Deutschland"
+                    job_url = f"https://jobs.smartrecruiters.com/{self.company_identifier}/{job_id}"
+                    jobs.append({
+                        "title": j.get("name"),
+                        "url": job_url,
+                        "location": loc,
+                        "start_date": j.get("releasedDate"),
+                        "level": j.get("department") or self.company_name
+                    })
+            print(f"  Found {len(jobs)} jobs")
+            return jobs
+        except Exception as e:
+            print(f"  {self.company_name} SmartRecruiters scraping failed: {e}")
+            return []
+
+class JibeScraper(BaseScraper):
+    def __init__(self, company_name, domain, location="Germany"):
+        super().__init__(company_name, f"https://{domain}/api/jobs?location={location}")
+        self.domain = domain
+
+    def fetch_jobs(self, session):
+        print(f"[{self.company_name}] Scraping Jibe API...")
+        try:
+            r = session.get(self.base_url, timeout=15)
+            r.raise_for_status()
+            data = r.json()
+            jobs = []
+            for item in data.get("jobs", []):
+                doc = item.get("data", {})
+                title = doc.get("title")
+                slug = doc.get("slug")
+                if title and slug:
+                    url = f"https://{self.domain}/jobs/{slug}"
+                    loc = doc.get("full_location") or doc.get("city") or "Deutschland"
+                    posted = doc.get("create_date") or doc.get("posted_date")
+                    jobs.append({
+                        "title": title,
+                        "url": url,
+                        "location": loc,
+                        "start_date": posted,
+                        "level": self.company_name
+                    })
+            print(f"  Found {len(jobs)} jobs")
+            return jobs
+        except Exception as e:
+            print(f"  {self.company_name} Jibe scraping failed: {e}")
+            return []
+
+class AbbVieScraper(BaseScraper):
+    def __init__(self):
+        super().__init__("AbbVie", "https://careers.abbvie.com/en/jobs?q=Germany")
+
+    def fetch_jobs(self, session):
+        print(f"[{self.company_name}] Scraping AbbVie careers...")
+        try:
+            r = session.get(self.base_url, timeout=15)
+            r.raise_for_status()
+            soup = BeautifulSoup(r.text, "html.parser")
+            job_links = soup.find_all("a", href=re.compile(r"/en/job/"))
+            jobs = []
+            seen = set()
+            processed_count = 0
+            for link in job_links:
+                href = link.get("href")
+                url = f"https://careers.abbvie.com{href}" if href.startswith("/") else href
+                if url in seen:
+                    continue
+                seen.add(url)
+                title = link.get_text(strip=True)
+                if not title or title.lower() in ["learn more", "apply"]:
+                    continue
+                if len(title) < 5:
+                    continue
+                
+                card = link.find_parent(class_=re.compile(r"card|job", re.I)) or link.parent.parent
+                location = "Deutschland"
+                if card:
+                    card_text = card.get_text(" | ", strip=True)
+                    m_loc = re.search(r'Location\s*\|\s*([^|]+)', card_text)
+                    if m_loc:
+                        location = m_loc.group(1).strip()
+
+                start_date = None
+                if processed_count < self.max_detail_requests:
+                    start_date = self._fetch_page_and_match(
+                        session, url, r'"datePosted"\s*:\s*"([^"]+)"', group_index=1, use_raw_html=True
+                    )
+                    processed_count += 1
+
+                jobs.append({
+                    "title": title,
+                    "url": url,
+                    "location": location,
+                    "start_date": start_date or datetime.now().strftime("%d.%m.%y"),
+                    "level": "AbbVie"
+                })
+            print(f"  Found {len(jobs)} jobs")
+            return jobs
+        except Exception as e:
+            print(f"  AbbVie scraping failed: {e}")
+            return []
+
+class EisaiScraper(BaseScraper):
+    def __init__(self):
+        super().__init__("Eisai", "https://www.eisai.de/karriere/stellenangebote/stellenanzeigen-deutschland/")
+
+    def fetch_jobs(self, session):
+        print(f"[{self.company_name}] Scraping Eisai Deutschland...")
+        try:
+            r = session.get(self.base_url, timeout=15)
+            r.raise_for_status()
+            soup = BeautifulSoup(r.text, "html.parser")
+            prefix = "/karriere/stellenangebote/stellenanzeigen-deutschland/"
+            jobs = []
+            seen = set()
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                if href.startswith(prefix) and href != prefix:
+                    url = f"https://www.eisai.de{href}" if href.startswith("/") else href
+                    if url in seen:
+                        continue
+                    seen.add(url)
+                    title = a.get_text(strip=True)
+                    if not title or len(title) < 5 or "stellenanzeigen" in title.lower():
+                        continue
+                    jobs.append({
+                        "title": title,
+                        "url": url,
+                        "location": "Frankfurt am Main, Deutschland",
+                        "start_date": datetime.now().strftime("%d.%m.%y"),
+                        "level": "Eisai Deutschland"
+                    })
+            print(f"  Found {len(jobs)} jobs")
+            return jobs
+        except Exception as e:
+            print(f"  Eisai scraping failed: {e}")
+            return []
+
 # --- SCRAPER REGISTRY ---
 
 SCRAPERS = [
-    SuccessFactorsScraper(
-        "MEDICE", 
-        "career.medice-health-family.com", 
-        "/search/?q=&locationsearch=iserlohn&searchResultView=LIST&pageNumber=0&facetFilters=%7B%22sfstd_jobLocation_obj%22%3A%5B%22Iserlohn%22%5D%2C%22cust_businessArea%22%3A%5B%22MEDICE%22%5D%2C%22jobLevel%22%3A%5B%22Berufserfahrene%22%2C%22Team-Leitung%22%5D%7D",
-        {"sfstd_jobLocation_obj": ["Iserlohn"], "cust_businessArea": ["MEDICE"], "jobLevel": ["Berufserfahrene", "Team-Leitung"]}
+    # --- Top Pharma Prioritätsliste (MSL, Medical Affairs & Patient Advocacy) ---
+    WorkdayScraper(
+        "Roche", 
+        "roche.wd3.myworkdayjobs.com", 
+        "roche", 
+        "roche-ext", 
+        search_text="Germany"
     ),
+    NovartisScraper(),
+    AstraZenecaScraper(),
+    PhenomScraper(
+        "MSD", 
+        "https://jobs.msd.com/gb/en/search-results?keywords=Germany", 
+        "https://jobs.msd.com/gb/en/job"
+    ),
+    WorkdayScraper(
+        "BMS", 
+        "bristolmyerssquibb.wd5.myworkdayjobs.com", 
+        "bristolmyerssquibb", 
+        "BMS", 
+        search_text="Germany"
+    ),
+    AbbVieScraper(),
+    JNJScraper(),
     TalentBrewScraper(
         "Sanofi",
         "jobs.sanofi.com",
         "/de/jobsuche",
         "2921044", "2", "50", "Deutschland"
     ),
-    AstraZenecaScraper(),
     PfizerScraper(),
     SuccessFactorsScraper(
-        "Chiesi",
-        "careers.chiesi.com",
-        "/search/?createNewAlert=false&q=&optionsFacetsDD_country=DE",
-        {"optionsFacetsDD_country": ["DE"]}
+        "Bayer",
+        "jobs.bayer.com",
+        "/search/?q=&locationsearch=Germany",
+        {"locationsearch": "Germany"},
+        locale="de_DE"
     ),
-    MerckScraper(),
-    KadeScraper(),
     SuccessFactorsScraper(
-        "Teva",
-        "careers.teva",
-        "/search/?q=&sortColumn=referencedate&sortDirection=desc&searchby=location&d=15&optionsFacetsDD_department=Germany",
-        {"optionsFacetsDD_department": ["Germany"]}
+        "Boehringer Ingelheim",
+        "jobs.boehringer-ingelheim.com",
+        "/search/?q=&locationsearch=Germany",
+        {"locationsearch": "Germany"},
+        locale="de_DE"
+    ),
+    WorkdayScraper(
+        "Eli Lilly", 
+        "lilly.wd115.myworkdayjobs.com", 
+        "lilly", 
+        "LLY", 
+        search_text="Germany"
     ),
     TalentBrewScraper(
         "Takeda",
@@ -1173,21 +1556,138 @@ SCRAPERS = [
         "/search-jobs/Germany/1113/2/2921044/51x5/10x5/50/2",
         "2921044", "2", "50", "Germany"
     ),
-    NovartisScraper(),
-    JNJScraper(),
+    WorkdayScraper(
+        "Amgen", 
+        "amgen.wd1.myworkdayjobs.com", 
+        "amgen", 
+        "Careers", 
+        search_text="Germany",
+        applied_facets={"LocationCountry": ["dcc5b7608d8644b3a93716604e78e995"]}
+    ),
+    WorkdayScraper(
+        "Gilead", 
+        "gilead.wd1.myworkdayjobs.com", 
+        "gilead", 
+        "gileadcareers", 
+        search_text="Germany"
+    ),
+    MerckScraper(),
+    WorkdayScraper(
+        "Biogen", 
+        "biibhr.wd3.myworkdayjobs.com", 
+        "biibhr", 
+        "external", 
+        search_text="Germany"
+    ),
+    PhenomScraper(
+        "GSK", 
+        "https://jobs.gsk.com/gb/en/search-results?keywords=Germany", 
+        "https://jobs.gsk.com/gb/en/job"
+    ),
+    SuccessFactorsScraper(
+        "Daiichi Sankyo",
+        "careers.daiichisankyo.com",
+        "/search/?q=&locationsearch=Germany",
+        location="Germany",
+        locale="en_US"
+    ),
+    SuccessFactorsScraper(
+        "Novo Nordisk",
+        "careers.novonordisk.com",
+        "/search/?q=&locationsearch=Germany",
+        {"locationsearch": "Germany"},
+        locale="de_DE"
+    ),
+    SuccessFactorsScraper(
+        "Astellas",
+        "careers.astellas.com",
+        "/search/?q=&locationsearch=Germany",
+        {"locationsearch": "Germany"},
+        locale="en_US"
+    ),
+    PhenomScraper(
+        "UCB", 
+        "https://careers.ucb.com/global/en/search-results?keywords=Germany", 
+        "https://careers.ucb.com/global/en/job"
+    ),
+    WorkdayScraper(
+        "Vertex", 
+        "vrtx.wd501.myworkdayjobs.com", 
+        "vrtx", 
+        "Vertex_Careers", 
+        search_text="Germany"
+    ),
+    WorkdayScraper(
+        "CSL Behring", 
+        "csl.wd1.myworkdayjobs.com", 
+        "csl", 
+        "CSL_External", 
+        search_text="Germany"
+    ),
+    SuccessFactorsScraper(
+        "BioNTech",
+        "jobs.biontech.com",
+        "/search/?q=&locationsearch=Germany",
+        {"locationsearch": "Germany"},
+        locale="de_DE"
+    ),
+    WorkdayScraper(
+        "Ipsen", 
+        "ipsen.wd103.myworkdayjobs.com", 
+        "ipsen", 
+        "Ipsen_Careers", 
+        search_text="Germany"
+    ),
+    SuccessFactorsScraper(
+        "Servier",
+        "jobs.servier.com",
+        "/search/?q=&locationsearch=Germany",
+        {"locationsearch": "Germany"},
+        locale="de_DE"
+    ),
+    EisaiScraper(),
+    GreenhouseScraper("Alnylam", "alnylampharmaceuticals"),
+    JibeScraper("Incyte", "careers.incyte.com", location="Germany"),
+    SuccessFactorsScraper(
+        "Grünenthal",
+        "careers.grunenthal.com",
+        "/search/?q=&locationsearch=Germany",
+        {"locationsearch": "Germany"},
+        locale="de_DE"
+    ),
+    SmartRecruitersScraper("Sobi", "sobi"),
+
+    # --- Weitere etablierte Pharmaunternehmen (Bestehende Scraper) ---
+    SuccessFactorsScraper(
+        "MEDICE", 
+        "career.medice-health-family.com", 
+        "/search/?q=&locationsearch=iserlohn&searchResultView=LIST&pageNumber=0&facetFilters=%7B%22sfstd_jobLocation_obj%22%3A%5B%22Iserlohn%22%5D%2C%22cust_businessArea%22%3A%5B%22MEDICE%22%5D%2C%22jobLevel%22%3A%5B%22Berufserfahrene%22%2C%22Team-Leitung%22%5D%7D",
+        {"sfstd_jobLocation_obj": ["Iserlohn"], "cust_businessArea": ["MEDICE"], "jobLevel": ["Berufserfahrene", "Team-Leitung"]},
+        locale="de_DE"
+    ),
+    SuccessFactorsScraper(
+        "Chiesi",
+        "careers.chiesi.com",
+        "/search/?createNewAlert=false&q=&optionsFacetsDD_country=DE",
+        {"optionsFacetsDD_country": ["DE"]}
+    ),
+    KadeScraper(),
+    TevaScraper(),
     AenovaScraper(),
     SuccessFactorsScraper(
         "B. Braun",
         "jobs.bbraun.com",
         "/search/?q=&facetFilters=%7B%22cust_country%22%3A%5B%22Deutschland%22%5D%7D",
-        {"cust_country": ["Deutschland"]}
+        {"cust_country": ["Deutschland"]},
+        locale="de_DE"
     ),
     BerlinChemieScraper(),
     SuccessFactorsScraper(
         "NextPharma",
         "careers.nextpharma.com",
-        "/search/?createNewAlert=false&q=&optionsFacetsDD_customfield5=Germany",
-        {"optionsFacetsDD_customfield5": ["Germany"]}
+        "/search/?q=&locationsearch=Germany",
+        {"locationsearch": "Germany"},
+        locale="de_DE"
     ),
     AristoScraper()
 ]
